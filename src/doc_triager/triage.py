@@ -53,7 +53,6 @@ def _call_llm(
     api_base: str | None = None,
     mode: str = "api",
     provider: str = "",
-    file_path: Path | None = None,
 ) -> str:
     """Dispatch an LLM call to the appropriate backend.
 
@@ -72,10 +71,7 @@ def _call_llm(
         caller = callers.get(provider)
         if caller is None:
             raise ValueError(f"未対応のCLIプロバイダ: {provider}")
-        kwargs: dict = {"prompt": prompt, "model": model, "timeout": timeout}
-        if provider == "claude" and file_path is not None:
-            kwargs["file_path"] = file_path
-        return caller(**kwargs)
+        return caller(prompt=prompt, model=model, timeout=timeout)
     else:
         return call_api(prompt=prompt, model=model, timeout=timeout, api_base=api_base)
 
@@ -180,6 +176,7 @@ def build_classify_prompt(
         return _load_prompt("classify_file.txt").format(
             filename=filename,
             file_extension=file_extension,
+            file_path=file_path,
         )
     else:
         return _load_prompt("classify.txt").format(
@@ -236,7 +233,6 @@ def classify_document(
             api_base=api_base,
             mode=mode,
             provider=provider,
-            file_path=file_path,
         )
     except ValueError as e:
         return TriageResult(error=str(e))

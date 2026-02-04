@@ -655,8 +655,10 @@ class TestClassifyDocumentFilePath:
         )
 
     @patch("doc_triager.triage.call_claude")
-    def test_cli_claude_passes_file_path(self, mock_cli: MagicMock) -> None:
-        """_call_llm → call_claude に file_path が伝搬される。"""
+    def test_cli_claude_does_not_pass_file_path_to_call(
+        self, mock_cli: MagicMock
+    ) -> None:
+        """_call_llm → call_claude に file_path が渡されない。"""
         mock_cli.return_value = self._success_json()
 
         classify_document(
@@ -672,7 +674,7 @@ class TestClassifyDocumentFilePath:
 
         mock_cli.assert_called_once()
         call_kwargs = mock_cli.call_args.kwargs
-        assert call_kwargs["file_path"] == Path("/tmp/slides.pdf")
+        assert "file_path" not in call_kwargs
 
     @patch("doc_triager.triage.call_claude")
     def test_file_mode_uses_classify_file_template(self, mock_cli: MagicMock) -> None:
@@ -692,8 +694,9 @@ class TestClassifyDocumentFilePath:
 
         call_kwargs = mock_cli.call_args.kwargs
         prompt = call_kwargs["prompt"]
-        # classify_file.txt 固有の文言が含まれる
-        assert "attached" in prompt.lower()
+        # classify_file.txt 固有の文言が含まれる（Read ツール指示）
+        assert "Read" in prompt
+        assert "/tmp/slides.pdf" in prompt
         # classify.txt 固有の文言（extracted_text プレースホルダの展開結果）が含まれない
         assert "{extracted_text}" not in prompt
 
@@ -738,7 +741,7 @@ class TestClassifyDocumentFilePath:
         # テキストモードでは extracted_text の内容がプロンプトに含まれる
         assert "Some document content" in prompt
         # file_path は渡されない
-        assert "file_path" not in call_kwargs or call_kwargs.get("file_path") is None
+        assert "file_path" not in call_kwargs
 
 
 class TestBuildClassifyPrompt:
@@ -752,8 +755,9 @@ class TestBuildClassifyPrompt:
             file_path=Path("/tmp/slides.pdf"),
         )
 
-        # classify_file.txt の特徴的な文言
-        assert "attached" in prompt.lower()
+        # classify_file.txt の特徴的な文言（Read ツール指示）
+        assert "Read" in prompt
+        assert "/tmp/slides.pdf" in prompt
         assert "slides.pdf" in prompt
         assert ".pdf" in prompt
         # テキストモード固有のプレースホルダが展開されていないこと
@@ -793,6 +797,7 @@ class TestBuildClassifyPrompt:
 
         assert "evergreen" in prompt
         assert "temporal" in prompt
+        assert "/tmp/report.pptx" in prompt
 
     def test_build_prompt_text_mode_contains_classification_criteria(self) -> None:
         """text モードのプロンプトに分類基準が含まれる。"""

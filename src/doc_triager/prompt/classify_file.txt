@@ -1,6 +1,6 @@
 ★★★
 You are a document classification expert.
-Analyze the attached file and classify it as either "evergreen" or "temporal" content.
+Classify the specified file as either "evergreen" or "temporal" content.
 
 ## Classification Criteria
 
@@ -36,10 +36,12 @@ or when there is insufficient information to make a reliable judgment.
 
 - Filename: {filename}
 - File type: {file_extension}
+- File path: {file_path}
 
 ## Instructions
 
-The file has been attached directly. Analyze its full content — including any visual elements
+Use the Read tool to read the file at the path specified above.
+Analyze its full content — including any visual elements
 such as slides, diagrams, charts, and images — to determine the classification.
 
 ## Output Format

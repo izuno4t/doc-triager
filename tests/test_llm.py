@@ -1,10 +1,15 @@
 """Tests for llm module."""
 
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from doc_triager.llm import build_claude_cmd, call_api, call_claude, call_codex
+from doc_triager.llm import (
+    build_claude_cmd,
+    build_codex_cmd,
+    call_api,
+    call_claude,
+    call_codex,
+)
 
 
 class TestCallApi:
@@ -260,38 +265,20 @@ class TestCallCodex:
 class TestBuildClaudeCmd:
     """Tests for build_claude_cmd function."""
 
-    def test_build_claude_cmd_with_model_and_file(self) -> None:
-        """model + file_path 指定時に正しい cmd リストを返す。"""
-        cmd = build_claude_cmd(
-            model="claude-sonnet-4-20250514", file_path=Path("/tmp/test.pdf")
-        )
-        assert cmd == [
-            "claude",
-            "-p",
-            "--output-format",
-            "text",
-            "--model",
-            "claude-sonnet-4-20250514",
-            "-f",
-            "/tmp/test.pdf",
-        ]
-
     def test_build_claude_cmd_minimal(self) -> None:
-        """model=None, file_path=None で最小 cmd を返す。"""
+        """model=None で最小 cmd を返す。"""
         cmd = build_claude_cmd(model=None)
         assert cmd == ["claude", "-p", "--output-format", "text"]
 
-    def test_build_claude_cmd_model_only(self) -> None:
-        """model のみ指定時に --model が含まれ -f は含まれない。"""
+    def test_build_claude_cmd_with_model(self) -> None:
+        """model 指定時に --model が含まれる。"""
         cmd = build_claude_cmd(model="my-model")
         assert cmd == ["claude", "-p", "--output-format", "text", "--model", "my-model"]
-        assert "-f" not in cmd
 
-    def test_build_claude_cmd_file_only(self) -> None:
-        """file_path のみ指定時に -f が含まれ --model は含まれない。"""
-        cmd = build_claude_cmd(model=None, file_path=Path("/tmp/doc.pdf"))
-        assert cmd == ["claude", "-p", "--output-format", "text", "-f", "/tmp/doc.pdf"]
-        assert "--model" not in cmd
+    def test_build_claude_cmd_no_file_flag(self) -> None:
+        """build_claude_cmd は -f フラグを含まない。"""
+        cmd = build_claude_cmd(model="claude-sonnet-4-20250514")
+        assert "-f" not in cmd
 
     @patch("doc_triager.llm.subprocess.run")
     def test_call_claude_uses_build_cmd(self, mock_run: MagicMock) -> None:
@@ -304,48 +291,35 @@ class TestBuildClaudeCmd:
             prompt="test",
             model="my-model",
             timeout=120,
-            file_path=Path("/tmp/test.pdf"),
         )
 
         cmd = mock_run.call_args.kwargs["args"]
-        expected = build_claude_cmd(model="my-model", file_path=Path("/tmp/test.pdf"))
+        expected = build_claude_cmd(model="my-model")
         assert cmd == expected
 
 
-class TestCallClaudeFilePath:
-    """Tests for call_claude file_path parameter."""
+class TestBuildCodexCmd:
+    """Tests for build_codex_cmd function."""
+
+    def test_build_codex_cmd_with_model(self) -> None:
+        """model 指定時に正しい cmd リストを返す。"""
+        cmd = build_codex_cmd(model="o3")
+        assert cmd == ["codex", "exec", "-", "-m", "o3"]
+
+    def test_build_codex_cmd_minimal(self) -> None:
+        """model=None で最小 cmd を返す。"""
+        cmd = build_codex_cmd(model=None)
+        assert cmd == ["codex", "exec", "-"]
 
     @patch("doc_triager.llm.subprocess.run")
-    def test_call_claude_with_file_path(self, mock_run: MagicMock) -> None:
-        """file_path 指定時に -f <path> がコマンドに含まれる。"""
-        from pathlib import Path
-
+    def test_call_codex_uses_build_cmd(self, mock_run: MagicMock) -> None:
+        """call_codex が build_codex_cmd を使用している。"""
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["claude"], returncode=0, stdout="output", stderr=""
+            args=["codex"], returncode=0, stdout="output", stderr=""
         )
 
-        call_claude(
-            prompt="classify this",
-            model="my-model",
-            timeout=120,
-            file_path=Path("/tmp/test.pdf"),
-        )
+        call_codex(prompt="test", model="o3", timeout=120)
 
         cmd = mock_run.call_args.kwargs["args"]
-        assert "-f" in cmd
-        assert "/tmp/test.pdf" in cmd
-        # -f と path が連続していること
-        idx = cmd.index("-f")
-        assert cmd[idx + 1] == "/tmp/test.pdf"
-
-    @patch("doc_triager.llm.subprocess.run")
-    def test_call_claude_without_file_path(self, mock_run: MagicMock) -> None:
-        """file_path 未指定（デフォルト）では -f がコマンドに含まれない。"""
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=["claude"], returncode=0, stdout="output", stderr=""
-        )
-
-        call_claude(prompt="classify this", model="my-model", timeout=120)
-
-        cmd = mock_run.call_args.kwargs["args"]
-        assert "-f" not in cmd
+        expected = build_codex_cmd(model="o3")
+        assert cmd == expected

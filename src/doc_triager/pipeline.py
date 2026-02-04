@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from doc_triager.checksum import compute_checksum, is_processed
-from doc_triager.triage import apply_threshold, classify_document, summarize_text
 from doc_triager.config import Config
 from doc_triager.database import insert_result
 from doc_triager.extractor import extract_text, truncate_text
+from doc_triager.llm import build_claude_cmd, build_codex_cmd
 from doc_triager.mover import move_file
+from doc_triager.triage import apply_threshold, classify_document, summarize_text
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +59,15 @@ def process_file(
     if mode == "api":
         model = f"{cfg.llm.provider}/{cfg.llm.model}"
     else:
-        model = cfg.llm.model
+        # CLI モードではデフォルト値（API 用モデル）を渡さない
+        model = "" if cfg.llm.model == "gpt-4o" else cfg.llm.model
 
     if file_direct:
         # [3.3-alt] ファイル直接モード: 抽出/トランケート/要約をスキップ
         logger.info("  ファイル直接モード（CLI claude）")
+        if dry_run:
+            cmd = build_claude_cmd(model=model or None)
+            logger.info("  コマンド: %s", " ".join(cmd))
         cls_result = classify_document(
             text="",
             filename=file_path.name,
@@ -162,6 +167,15 @@ def process_file(
             else:
                 logger.info("  要約完了")
             classify_text = summary_result.summary
+
+        if dry_run and mode == "cli":
+            cmd_builders = {
+                "claude": lambda: build_claude_cmd(model=model or None),
+                "codex": lambda: build_codex_cmd(model=model or None),
+            }
+            builder = cmd_builders.get(cfg.llm.provider)
+            if builder:
+                logger.info("  コマンド: %s", " ".join(builder()))
 
         cls_result = classify_document(
             text=classify_text,

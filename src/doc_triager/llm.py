@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from pathlib import Path
 
 import litellm
 
@@ -92,13 +91,11 @@ def _run_cli(
 def build_claude_cmd(
     *,
     model: str | None,
-    file_path: Path | None = None,
 ) -> list[str]:
     """Build claude CLI command list without executing.
 
     Args:
         model: Optional model name for --model option.
-        file_path: Optional file path to attach via -f flag.
 
     Returns:
         Command list suitable for subprocess execution.
@@ -106,8 +103,6 @@ def build_claude_cmd(
     cmd = ["claude", "-p", "--output-format", "text"]
     if model:
         cmd.extend(["--model", model])
-    if file_path:
-        cmd.extend(["-f", str(file_path)])
     return cmd
 
 
@@ -116,7 +111,6 @@ def call_claude(
     prompt: str,
     model: str | None,
     timeout: int,
-    file_path: Path | None = None,
 ) -> str:
     """Call LLM via claude CLI.
 
@@ -124,7 +118,6 @@ def call_claude(
         prompt: The prompt text to send via stdin.
         model: Optional model name for --model option.
         timeout: Subprocess timeout in seconds.
-        file_path: Optional file path to attach via -f flag.
 
     Returns:
         Raw response text from stdout.
@@ -134,8 +127,26 @@ def call_claude(
         subprocess.TimeoutExpired: If execution times out.
         RuntimeError: If CLI exits with non-zero code.
     """
-    cmd = build_claude_cmd(model=model, file_path=file_path)
+    cmd = build_claude_cmd(model=model)
     return _run_cli(cmd=cmd, prompt=prompt, timeout=timeout)
+
+
+def build_codex_cmd(
+    *,
+    model: str | None,
+) -> list[str]:
+    """Build codex CLI command list without executing.
+
+    Args:
+        model: Optional model name for -m option.
+
+    Returns:
+        Command list suitable for subprocess execution.
+    """
+    cmd = ["codex", "exec", "-"]
+    if model:
+        cmd.extend(["-m", model])
+    return cmd
 
 
 def call_codex(
@@ -159,8 +170,5 @@ def call_codex(
         subprocess.TimeoutExpired: If execution times out.
         RuntimeError: If CLI exits with non-zero code.
     """
-    cmd = ["codex", "exec", "-"]
-    if model:
-        cmd.extend(["-m", model])
-
+    cmd = build_codex_cmd(model=model)
     return _run_cli(cmd=cmd, prompt=prompt, timeout=timeout)

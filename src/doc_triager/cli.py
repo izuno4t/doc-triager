@@ -7,11 +7,9 @@ import typer
 
 from doc_triager.config import load_config, resolve_config
 from doc_triager.database import init_database
-from doc_triager.llm import build_claude_cmd
 from doc_triager.logging_config import setup_logging
 from doc_triager.pipeline import process_files
 from doc_triager.scanner import scan_files
-from doc_triager.triage import build_classify_prompt
 
 app = typer.Typer()
 
@@ -108,81 +106,6 @@ def export(
 ) -> None:
     """Export triage results from DB."""
     typer.echo(f"Export as {format}")
-
-
-@app.command(name="preview-cmd")
-def preview_cmd(
-    file: str = typer.Argument(..., help="対象ファイルパス"),
-    config: str | None = typer.Option(None, "--config", "-c", help="Config file path"),
-) -> None:
-    """Preview the CLI command and prompt that would be used for a file."""
-    config_path = Path(config) if config else Path("config.toml")
-    try:
-        cfg = load_config(config_path)
-    except (FileNotFoundError, ValueError) as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
-
-    file_path = Path(file)
-    if not file_path.exists():
-        typer.echo(f"Error: ファイルが見つかりません: {file_path}", err=True)
-        raise typer.Exit(code=1)
-
-    mode = cfg.llm.mode
-    provider = cfg.llm.provider
-    model = cfg.llm.model
-
-    filename = file_path.name
-    file_extension = file_path.suffix
-
-    is_file_direct = mode == "cli" and provider == "claude"
-
-    if mode == "api":
-        typer.echo(f"モード: API ({provider})")
-        typer.echo(f"モデル: {model}")
-        typer.echo("")
-        typer.echo("APIモードではCLIコマンドは使用しません。")
-        typer.echo("")
-        prompt = build_classify_prompt(
-            filename=filename,
-            file_extension=file_extension,
-            text="<テキスト抽出結果がここに入ります>",
-            truncated=False,
-        )
-        typer.echo("プロンプト:")
-        for line in prompt.splitlines():
-            typer.echo(f"  {line}")
-    elif is_file_direct:
-        typer.echo("モード: ファイル直接（CLI claude）")
-        cmd = build_claude_cmd(model=model or None, file_path=file_path)
-        typer.echo("コマンド:")
-        typer.echo(f"  {' '.join(cmd)}")
-        typer.echo("")
-        prompt = build_classify_prompt(
-            filename=filename,
-            file_extension=file_extension,
-            file_path=file_path,
-        )
-        typer.echo("プロンプト (stdin):")
-        for line in prompt.splitlines():
-            typer.echo(f"  {line}")
-    else:
-        typer.echo(f"モード: テキスト抽出（CLI {provider}）")
-        typer.echo(f"モデル: {model}")
-        typer.echo("")
-        typer.echo(
-            "ファイルからテキストを抽出した後、CLIにプロンプトとして送信します。"
-        )
-        typer.echo("")
-        prompt = build_classify_prompt(
-            filename=filename,
-            file_extension=file_extension,
-            text="<テキスト抽出結果がここに入ります>",
-            truncated=False,
-        )
-        typer.echo("プロンプト (stdin):")
-        for line in prompt.splitlines():
-            typer.echo(f"  {line}")
 
 
 if __name__ == "__main__":

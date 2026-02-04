@@ -442,3 +442,242 @@ class TestFileDirectMode:
             )
 
             mock_extract.assert_called_once()
+
+
+class TestDryRunCliCommandOutput:
+    """Tests for CLI command output during dry-run."""
+
+    @pytest.fixture()
+    def cli_claude_workspace(self, tmp_path: Path) -> dict:
+        """Create workspace configured for CLI claude mode."""
+        source_dir = tmp_path / "source"
+        output_dir = tmp_path / "output"
+        source_dir.mkdir()
+        output_dir.mkdir()
+
+        db_path = tmp_path / "test.db"
+        init_database(db_path)
+
+        f = source_dir / "slides.pdf"
+        f.write_bytes(b"%PDF-1.4 fake pdf content for testing " * 5)
+
+        cfg = Config(
+            input=InputConfig(directory=str(source_dir)),
+            output=OutputConfig(directory=str(output_dir)),
+            triage=TriageConfig(confidence_threshold=0.7),
+            llm=LlmConfig(
+                mode="cli", provider="claude", model="claude-sonnet-4-20250514"
+            ),
+            database=DatabaseConfig(path=str(db_path)),
+            text_extraction=TextExtractionConfig(min_text_length=10),
+        )
+
+        return {
+            "source_dir": source_dir,
+            "output_dir": output_dir,
+            "db_path": db_path,
+            "file": f,
+            "cfg": cfg,
+        }
+
+    @pytest.fixture()
+    def cli_codex_workspace(self, tmp_path: Path) -> dict:
+        """Create workspace configured for CLI codex mode."""
+        source_dir = tmp_path / "source"
+        output_dir = tmp_path / "output"
+        source_dir.mkdir()
+        output_dir.mkdir()
+
+        db_path = tmp_path / "test.db"
+        init_database(db_path)
+
+        f = source_dir / "doc.pdf"
+        f.write_text("Design patterns content. " * 20)
+
+        cfg = Config(
+            input=InputConfig(directory=str(source_dir)),
+            output=OutputConfig(directory=str(output_dir)),
+            triage=TriageConfig(confidence_threshold=0.7),
+            llm=LlmConfig(mode="cli", provider="codex", model="o3"),
+            database=DatabaseConfig(path=str(db_path)),
+            text_extraction=TextExtractionConfig(min_text_length=10),
+        )
+
+        return {
+            "source_dir": source_dir,
+            "output_dir": output_dir,
+            "db_path": db_path,
+            "file": f,
+            "cfg": cfg,
+        }
+
+    @patch("doc_triager.pipeline.classify_document")
+    @patch("doc_triager.pipeline.extract_text")
+    def test_dry_run_cli_claude_logs_command(
+        self,
+        mock_extract: MagicMock,
+        mock_classify: MagicMock,
+        cli_claude_workspace: dict,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """dry-run + CLI claude でコマンドがログ出力される（-f なし）。"""
+        from doc_triager.triage import TriageResult
+
+        mock_classify.return_value = TriageResult(
+            triage="evergreen", confidence=0.9, reason="Test", topics=["test"]
+        )
+
+        import logging
+
+        with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
+            process_file(
+                file_path=cli_claude_workspace["file"],
+                cfg=cli_claude_workspace["cfg"],
+                dry_run=True,
+            )
+
+        cmd_logs = [r.message for r in caplog.records if "コマンド" in r.message]
+        assert len(cmd_logs) >= 1
+        cmd_log = cmd_logs[0]
+        assert "claude" in cmd_log
+        assert "-p" in cmd_log
+        assert "--model" in cmd_log
+        assert "claude-sonnet-4-20250514" in cmd_log
+        # -f フラグが独立トークンとして含まれないこと（--output-format 内の -f は OK）
+        cmd_part = cmd_log.split("コマンド:")[-1].strip()
+        cmd_tokens = cmd_part.split()
+        assert "-f" not in cmd_tokens
+
+    @patch("doc_triager.pipeline.classify_document")
+    @patch("doc_triager.pipeline.extract_text")
+    def test_dry_run_cli_claude_default_model_omits_model_flag(
+        self,
+        mock_extract: MagicMock,
+        mock_classify: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """CLI claude でデフォルトモデル（gpt-4o）の場合 --model が出力されない。"""
+        from doc_triager.triage import TriageResult
+
+        source_dir = tmp_path / "source"
+        output_dir = tmp_path / "output"
+        source_dir.mkdir()
+        output_dir.mkdir()
+
+        db_path = tmp_path / "test.db"
+        init_database(db_path)
+
+        f = source_dir / "slides.pdf"
+        f.write_bytes(b"%PDF-1.4 fake pdf content for testing " * 5)
+
+        cfg = Config(
+            input=InputConfig(directory=str(source_dir)),
+            output=OutputConfig(directory=str(output_dir)),
+            triage=TriageConfig(confidence_threshold=0.7),
+            llm=LlmConfig(mode="cli", provider="claude"),  # model はデフォルト "gpt-4o"
+            database=DatabaseConfig(path=str(db_path)),
+            text_extraction=TextExtractionConfig(min_text_length=10),
+        )
+
+        mock_classify.return_value = TriageResult(
+            triage="evergreen", confidence=0.9, reason="Test", topics=["test"]
+        )
+
+        import logging
+
+        with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
+            process_file(file_path=f, cfg=cfg, dry_run=True)
+
+        cmd_logs = [r.message for r in caplog.records if "コマンド" in r.message]
+        assert len(cmd_logs) >= 1
+        cmd_log = cmd_logs[0]
+        assert "claude" in cmd_log
+        assert "--model" not in cmd_log
+        assert "gpt-4o" not in cmd_log
+
+    @patch("doc_triager.llm.subprocess.run")
+    def test_dry_run_cli_codex_logs_command(
+        self,
+        mock_run: MagicMock,
+        cli_codex_workspace: dict,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """dry-run + CLI codex でコマンドがログ出力される。"""
+        import logging
+
+        mock_run.return_value = __import__("subprocess").CompletedProcess(
+            args=["codex"],
+            returncode=0,
+            stdout=__import__("json").dumps(
+                {
+                    "classification": "evergreen",
+                    "confidence": 0.9,
+                    "reason": "Test",
+                    "topics": ["test"],
+                }
+            ),
+            stderr="",
+        )
+
+        with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
+            process_file(
+                file_path=cli_codex_workspace["file"],
+                cfg=cli_codex_workspace["cfg"],
+                dry_run=True,
+            )
+
+        cmd_logs = [r.message for r in caplog.records if "コマンド" in r.message]
+        assert len(cmd_logs) >= 1
+        cmd_log = cmd_logs[0]
+        assert "codex" in cmd_log
+
+    @patch("doc_triager.pipeline.classify_document")
+    @patch("doc_triager.pipeline.extract_text")
+    def test_non_dry_run_cli_does_not_log_command(
+        self,
+        mock_extract: MagicMock,
+        mock_classify: MagicMock,
+        cli_claude_workspace: dict,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """dry-run でない場合はコマンドをログ出力しない。"""
+        from doc_triager.triage import TriageResult
+
+        mock_classify.return_value = TriageResult(
+            triage="evergreen", confidence=0.9, reason="Test", topics=["test"]
+        )
+
+        import logging
+
+        with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
+            process_file(
+                file_path=cli_claude_workspace["file"],
+                cfg=cli_claude_workspace["cfg"],
+                dry_run=False,
+            )
+
+        cmd_logs = [r.message for r in caplog.records if "コマンド" in r.message]
+        assert len(cmd_logs) == 0
+
+    @patch("doc_triager.llm.litellm.completion")
+    def test_dry_run_api_mode_does_not_log_command(
+        self,
+        mock_completion: MagicMock,
+        workspace: dict,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """dry-run + API モードではコマンドをログ出力しない。"""
+        import logging
+
+        mock_completion.return_value = _mock_llm_response("evergreen", 0.9)
+
+        with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
+            process_file(
+                file_path=workspace["file"],
+                cfg=workspace["cfg"],
+                dry_run=True,
+            )
+
+        cmd_logs = [r.message for r in caplog.records if "コマンド" in r.message]
+        assert len(cmd_logs) == 0
