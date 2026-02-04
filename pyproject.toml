@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "doc-triager"
+version = "0.1.0"
+description = "Classify documents into evergreen, temporal, or unknown using LLM"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { file = "LICENSE" }
+dependencies = [
+    "typer>=0.15",
+    "litellm>=1.0",
+    "markitdown[all]>=0.1",
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+doc-triager = "doc_triager.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.9",
+]

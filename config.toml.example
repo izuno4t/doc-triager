@@ -1,0 +1,48 @@
+# doc-triager 設定ファイル
+# このファイルをコピーして config.toml を作成してください
+# cp config.toml.example config.toml
+
+[input]
+directory = "/path/to/google-drive/documents"
+max_files = 0                    # 1回の実行で処理するファイル数上限（0 = 無制限、CLI --limit が優先）
+# 除外パターン（glob）
+exclude_patterns = [
+    "*.DS_Store",
+    "*.gitkeep",
+    ".git/**",
+    "__MACOSX/**",
+]
+
+[output]
+directory = "/path/to/classified"
+# temporal, evergreen, unknown サブディレクトリは自動作成
+
+[triage]
+confidence_threshold = 0.7
+max_input_tokens = 8000
+
+[llm]
+mode = "api"                     # "api" | "cli"
+provider = "openai"              # mode=api: litellm プロバイダ（openai / anthropic / ollama）, mode=cli: CLI名（claude / codex）
+model = "gpt-4o"                 # mode=api: litellm モデル, mode=cli: CLI の --model（省略可）
+api_key_env = "OPENAI_API_KEY"   # mode=api の場合のみ使用（環境変数名を指定、値は .env に記載）
+# Ollama用
+# base_url = "http://localhost:11434"
+
+[llm.rate_limit]
+requests_per_minute = 30
+max_retries = 3
+retry_delay_sec = 5
+request_timeout_sec = 120
+
+[database]
+path = "./triage.db"
+
+[text_extraction]
+min_text_length = 100
+llm_summary_enabled = false
+# debug_dir = "./log/text"          # 抽出テキストのデバッグ出力先（空なら無効）
+
+[logging]
+level = "INFO"                   # DEBUG / INFO / WARNING / ERROR
+file = "./log/doc-triager.log"

@@ -1,0 +1,54 @@
+★★★
+You are a document classification expert.
+Analyze the attached file and classify it as either "evergreen" or "temporal" content.
+
+## Classification Criteria
+
+### evergreen (Timeless / Foundational)
+Content that remains valuable regardless of when it is read.
+Its relevance does NOT decay significantly over time.
+
+Examples of evergreen content:
+- Design principles and architectural patterns (e.g., SOLID, Clean Architecture)
+- Algorithm explanations and data structure theory
+- Protocol specifications and core language specifications
+- Cognitive psychology theories, UX heuristics
+- Mathematical or scientific foundations
+- Best practices that are technology-agnostic
+
+### temporal (Time-sensitive / Trending)
+Content whose value is closely tied to a specific point in time.
+Its relevance decays significantly as time passes.
+
+Examples of temporal content:
+- Annual trend reports (e.g., "AI Trends 2024")
+- Release notes or new feature introductions for specific versions
+- Benchmark comparisons tied to specific hardware/software versions
+- Conference keynotes focused on current events
+- News articles, market analyses with specific dates
+- Technology comparisons that will be outdated within 1-2 years
+
+### unknown
+Use this when the content does not clearly fit either category,
+or when there is insufficient information to make a reliable judgment.
+
+## Document Information
+
+- Filename: {filename}
+- File type: {file_extension}
+
+## Instructions
+
+The file has been attached directly. Analyze its full content — including any visual elements
+such as slides, diagrams, charts, and images — to determine the classification.
+
+## Output Format
+
+Respond ONLY with the following JSON. Do not include any other text.
+
+{{
+  "classification": "evergreen" | "temporal" | "unknown",
+  "confidence": 0.0 to 1.0,
+  "reason": "Brief explanation of your classification decision",
+  "topics": ["topic1", "topic2", ...]
+}}

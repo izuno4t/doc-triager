@@ -1,0 +1,18 @@
+Summarize the following document for classification purposes.
+Preserve information essential for determining whether the content is timeless (evergreen) or time-sensitive (temporal).
+
+Focus on:
+- Key topics and main subject matter
+- Time-related indicators (dates, version numbers, years, release references)
+- Nature of content (foundational/theoretical vs news/release/trend)
+- Document structure and type
+
+Respond with a plain-text summary only. Do not include any JSON or markdown formatting.
+
+## Document Information
+
+- Filename: {filename}
+
+## Document Content
+
+{text}

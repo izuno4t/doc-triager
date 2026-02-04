@@ -1,0 +1,35 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "asyncio",
+    "charliermarsh",
+    "devcontainer",
+    "devcontainers",
+    "EXIF",
+    "hatchling",
+    "litellm",
+    "markitdown",
+    "ollama",
+    "pypdf",
+    "pyproject",
+    "pytest",
+    "Qdrant",
+    "tiangolo",
+    "toml",
+    "tomllib",
+    "triager",
+    "typer",
+    "venv"
+  ],
+  "ignorePaths": [
+    ".git",
+    ".venv",
+    "uv.lock",
+    "*.pyc",
+    "config.toml",
+    "config.toml.example",
+    ".env",
+    ".env.example"
+  ]
+}
