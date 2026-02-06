@@ -1,6 +1,5 @@
 """Tests for cli module."""
 
-import json
 import textwrap
 from pathlib import Path
 from unittest.mock import patch
@@ -54,43 +53,34 @@ def _setup_workspace(tmp_path: Path, *, max_files: int = 0) -> Path:
     return config_file
 
 
-def _mock_llm_response():
-    from unittest.mock import MagicMock
-
-    resp = MagicMock()
-    resp.choices = [MagicMock()]
-    resp.choices[0].message.content = json.dumps(
-        {
-            "classification": "evergreen",
-            "confidence": 0.9,
-            "reason": "Test",
-            "topics": [],
-        }
-    )
-    return resp
-
-
 class TestLimitAndMaxFiles:
     """Tests for --limit CLI option and max_files config interaction."""
 
-    @patch("doc_triager.llm.litellm.completion")
+    @patch("doc_triager.pipeline.process_file")
     def test_config_max_files_limits_processing(
-        self, mock_completion, tmp_path: Path
+        self, mock_process_file, tmp_path: Path
     ) -> None:
-        mock_completion.return_value = _mock_llm_response()
+        mock_process_file.return_value = {
+            "triage": None,
+            "skipped": False,
+            "error": None,
+        }
         config_file = _setup_workspace(tmp_path, max_files=2)
 
         result = runner.invoke(app, ["run", "--config", str(config_file), "--dry-run"])
 
         assert result.exit_code == 0
-        # max_files=2 なので LLM は最大 2 回呼ばれる
-        assert mock_completion.call_count <= 2
+        assert mock_process_file.call_count == 2
 
-    @patch("doc_triager.llm.litellm.completion")
+    @patch("doc_triager.pipeline.process_file")
     def test_cli_limit_overrides_config_max_files(
-        self, mock_completion, tmp_path: Path
+        self, mock_process_file, tmp_path: Path
     ) -> None:
-        mock_completion.return_value = _mock_llm_response()
+        mock_process_file.return_value = {
+            "triage": None,
+            "skipped": False,
+            "error": None,
+        }
         config_file = _setup_workspace(tmp_path, max_files=10)
 
         result = runner.invoke(
@@ -98,27 +88,33 @@ class TestLimitAndMaxFiles:
         )
 
         assert result.exit_code == 0
-        # CLI --limit=1 が config の max_files=10 より優先
-        assert mock_completion.call_count <= 1
+        assert mock_process_file.call_count == 1
 
-    @patch("doc_triager.llm.litellm.completion")
+    @patch("doc_triager.pipeline.process_file")
     def test_max_files_zero_means_no_limit(
-        self, mock_completion, tmp_path: Path
+        self, mock_process_file, tmp_path: Path
     ) -> None:
-        mock_completion.return_value = _mock_llm_response()
+        mock_process_file.return_value = {
+            "triage": None,
+            "skipped": False,
+            "error": None,
+        }
         config_file = _setup_workspace(tmp_path, max_files=0)
 
         result = runner.invoke(app, ["run", "--config", str(config_file), "--dry-run"])
 
         assert result.exit_code == 0
-        # 5 ファイル全部処理される
-        assert mock_completion.call_count == 5
+        assert mock_process_file.call_count == 5
 
-    @patch("doc_triager.llm.litellm.completion")
+    @patch("doc_triager.pipeline.process_file")
     def test_cli_limit_without_config_max_files(
-        self, mock_completion, tmp_path: Path
+        self, mock_process_file, tmp_path: Path
     ) -> None:
-        mock_completion.return_value = _mock_llm_response()
+        mock_process_file.return_value = {
+            "triage": None,
+            "skipped": False,
+            "error": None,
+        }
         config_file = _setup_workspace(tmp_path, max_files=0)
 
         result = runner.invoke(
@@ -126,4 +122,4 @@ class TestLimitAndMaxFiles:
         )
 
         assert result.exit_code == 0
-        assert mock_completion.call_count <= 3
+        assert mock_process_file.call_count == 3

@@ -46,7 +46,7 @@ class RateLimitConfig:
 class LlmConfig:
     mode: str = "api"
     provider: str = "openai"
-    model: str = "gpt-4o"
+    model: str = ""
     api_key_env: str = "OPENAI_API_KEY"
     base_url: str | None = None
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)

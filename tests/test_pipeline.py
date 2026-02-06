@@ -104,26 +104,21 @@ class TestProcessFile:
         assert record is not None
         assert record["triage"] == "evergreen"
 
-    @patch("doc_triager.llm.litellm.completion")
-    def test_dry_run_does_not_move(
-        self, mock_completion: MagicMock, workspace: dict
-    ) -> None:
-        mock_completion.return_value = _mock_llm_response("temporal", 0.85)
+    def test_dry_run_does_not_call_llm(self, workspace: dict) -> None:
+        """dry-run では LLM 呼び出し・ファイル移動・DB 記録をしない。"""
+        with patch("doc_triager.llm.litellm.completion") as mock_completion:
+            result = process_file(
+                file_path=workspace["file"],
+                cfg=workspace["cfg"],
+                dry_run=True,
+            )
 
-        result = process_file(
-            file_path=workspace["file"],
-            cfg=workspace["cfg"],
-            dry_run=True,
-        )
-
-        assert result["triage"] == "temporal"
-        # ファイルは移動されていない
+        mock_completion.assert_not_called()
         assert workspace["file"].exists()
         assert result["destination_path"] is None
 
-        # DBには記録される
         record = get_by_source_path(workspace["db_path"], str(workspace["file"]))
-        assert record is not None
+        assert record is None
 
     @patch("doc_triager.llm.litellm.completion")
     def test_low_confidence_becomes_unknown(
@@ -145,16 +140,19 @@ class TestProcessFile:
     ) -> None:
         mock_completion.return_value = _mock_llm_response("evergreen", 0.9)
 
-        # 1回目
-        process_file(file_path=workspace["file"], cfg=workspace["cfg"], dry_run=True)
+        # 1回目（本番実行で DB 記録＋移動）
+        process_file(file_path=workspace["file"], cfg=workspace["cfg"], dry_run=False)
 
-        # 2回目（同じファイル、同じチェックサム）
+        # ファイルを元に戻す（移動後に再テストするため）
+        dest = list(Path(workspace["output_dir"]).rglob("design.pdf"))[0]
+        dest.rename(workspace["file"])
+
+        # 2回目（同じファイル、同じチェックサム → スキップ）
         result = process_file(
-            file_path=workspace["file"], cfg=workspace["cfg"], dry_run=True
+            file_path=workspace["file"], cfg=workspace["cfg"], dry_run=False
         )
 
         assert result["skipped"] is True
-        # LLMは1回目しか呼ばれない
         assert mock_completion.call_count == 1
 
     def test_extraction_error_records_unknown(self, workspace: dict) -> None:
@@ -166,7 +164,7 @@ class TestProcessFile:
             )
 
             result = process_file(
-                file_path=workspace["file"], cfg=workspace["cfg"], dry_run=True
+                file_path=workspace["file"], cfg=workspace["cfg"], dry_run=False
             )
 
         assert result["triage"] == "unknown"
@@ -182,7 +180,7 @@ class TestProcessFile:
 
         with patch("doc_triager.llm.litellm.completion") as mock_completion:
             result = process_file(
-                file_path=workspace["file"], cfg=workspace["cfg"], dry_run=True
+                file_path=workspace["file"], cfg=workspace["cfg"], dry_run=False
             )
 
         assert result["triage"] == "unknown"
@@ -206,7 +204,7 @@ class TestProcessFiles:
         summary = process_files(
             files=files,
             cfg=workspace["cfg"],
-            dry_run=True,
+            dry_run=False,
         )
 
         assert summary["total"] == len(files)
@@ -240,7 +238,7 @@ class TestSummaryIntegration:
         result = process_file(
             file_path=workspace["file"],
             cfg=workspace["cfg"],
-            dry_run=True,
+            dry_run=False,
         )
 
         assert result["triage"] == "evergreen"
@@ -258,7 +256,7 @@ class TestSummaryIntegration:
         result = process_file(
             file_path=workspace["file"],
             cfg=workspace["cfg"],
-            dry_run=True,
+            dry_run=False,
         )
 
         assert result["triage"] == "evergreen"
@@ -280,7 +278,7 @@ class TestSummaryIntegration:
         result = process_file(
             file_path=workspace["file"],
             cfg=workspace["cfg"],
-            dry_run=True,
+            dry_run=False,
         )
 
         assert result["triage"] == "temporal"
@@ -363,7 +361,7 @@ class TestFileDirectMode:
         process_file(
             file_path=cli_workspace["file"],
             cfg=cli_workspace["cfg"],
-            dry_run=True,
+            dry_run=False,
         )
 
         mock_extract.assert_not_called()
@@ -386,7 +384,7 @@ class TestFileDirectMode:
         process_file(
             file_path=cli_workspace["file"],
             cfg=cli_workspace["cfg"],
-            dry_run=True,
+            dry_run=False,
         )
 
         mock_classify.assert_called_once()
@@ -411,7 +409,7 @@ class TestFileDirectMode:
         process_file(
             file_path=cli_workspace["file"],
             cfg=cli_workspace["cfg"],
-            dry_run=True,
+            dry_run=False,
         )
 
         record = get_by_source_path(
@@ -438,7 +436,7 @@ class TestFileDirectMode:
             process_file(
                 file_path=workspace["file"],
                 cfg=workspace["cfg"],
-                dry_run=True,
+                dry_run=False,
             )
 
             mock_extract.assert_called_once()
@@ -511,22 +509,12 @@ class TestDryRunCliCommandOutput:
             "cfg": cfg,
         }
 
-    @patch("doc_triager.pipeline.classify_document")
-    @patch("doc_triager.pipeline.extract_text")
     def test_dry_run_cli_claude_logs_command(
         self,
-        mock_extract: MagicMock,
-        mock_classify: MagicMock,
         cli_claude_workspace: dict,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """dry-run + CLI claude でコマンドがログ出力される（-f なし）。"""
-        from doc_triager.triage import TriageResult
-
-        mock_classify.return_value = TriageResult(
-            triage="evergreen", confidence=0.9, reason="Test", topics=["test"]
-        )
-
+        """dry-run + CLI claude でコマンドがログ出力される（-f なし、LLM 呼び出しなし）。"""
         import logging
 
         with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
@@ -543,23 +531,17 @@ class TestDryRunCliCommandOutput:
         assert "-p" in cmd_log
         assert "--model" in cmd_log
         assert "claude-sonnet-4-20250514" in cmd_log
-        # -f フラグが独立トークンとして含まれないこと（--output-format 内の -f は OK）
+        # -f フラグが独立トークンとして含まれないこと
         cmd_part = cmd_log.split("コマンド:")[-1].strip()
         cmd_tokens = cmd_part.split()
         assert "-f" not in cmd_tokens
 
-    @patch("doc_triager.pipeline.classify_document")
-    @patch("doc_triager.pipeline.extract_text")
     def test_dry_run_cli_claude_default_model_omits_model_flag(
         self,
-        mock_extract: MagicMock,
-        mock_classify: MagicMock,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """CLI claude でデフォルトモデル（gpt-4o）の場合 --model が出力されない。"""
-        from doc_triager.triage import TriageResult
-
+        """CLI claude でモデル未指定の場合 --model が出力されない。"""
         source_dir = tmp_path / "source"
         output_dir = tmp_path / "output"
         source_dir.mkdir()
@@ -575,13 +557,9 @@ class TestDryRunCliCommandOutput:
             input=InputConfig(directory=str(source_dir)),
             output=OutputConfig(directory=str(output_dir)),
             triage=TriageConfig(confidence_threshold=0.7),
-            llm=LlmConfig(mode="cli", provider="claude"),  # model はデフォルト "gpt-4o"
+            llm=LlmConfig(mode="cli", provider="claude"),  # model はデフォルト ""
             database=DatabaseConfig(path=str(db_path)),
             text_extraction=TextExtractionConfig(min_text_length=10),
-        )
-
-        mock_classify.return_value = TriageResult(
-            triage="evergreen", confidence=0.9, reason="Test", topics=["test"]
         )
 
         import logging
@@ -594,31 +572,14 @@ class TestDryRunCliCommandOutput:
         cmd_log = cmd_logs[0]
         assert "claude" in cmd_log
         assert "--model" not in cmd_log
-        assert "gpt-4o" not in cmd_log
 
-    @patch("doc_triager.llm.subprocess.run")
     def test_dry_run_cli_codex_logs_command(
         self,
-        mock_run: MagicMock,
         cli_codex_workspace: dict,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """dry-run + CLI codex でコマンドがログ出力される。"""
+        """dry-run + CLI codex でコマンドがログ出力される（LLM 呼び出しなし）。"""
         import logging
-
-        mock_run.return_value = __import__("subprocess").CompletedProcess(
-            args=["codex"],
-            returncode=0,
-            stdout=__import__("json").dumps(
-                {
-                    "classification": "evergreen",
-                    "confidence": 0.9,
-                    "reason": "Test",
-                    "topics": ["test"],
-                }
-            ),
-            stderr="",
-        )
 
         with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
             process_file(
@@ -660,17 +621,13 @@ class TestDryRunCliCommandOutput:
         cmd_logs = [r.message for r in caplog.records if "コマンド" in r.message]
         assert len(cmd_logs) == 0
 
-    @patch("doc_triager.llm.litellm.completion")
     def test_dry_run_api_mode_does_not_log_command(
         self,
-        mock_completion: MagicMock,
         workspace: dict,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """dry-run + API モードではコマンドをログ出力しない。"""
         import logging
-
-        mock_completion.return_value = _mock_llm_response("evergreen", 0.9)
 
         with caplog.at_level(logging.INFO, logger="doc_triager.pipeline"):
             process_file(

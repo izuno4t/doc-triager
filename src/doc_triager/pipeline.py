@@ -59,15 +59,33 @@ def process_file(
     if mode == "api":
         model = f"{cfg.llm.provider}/{cfg.llm.model}"
     else:
-        # CLI モードではデフォルト値（API 用モデル）を渡さない
-        model = "" if cfg.llm.model == "gpt-4o" else cfg.llm.model
+        model = cfg.llm.model
+
+    # dry-run: コマンド表示のみ、LLM 呼び出し・移動・DB 記録はしない
+    if dry_run:
+        if mode == "cli":
+            cmd_builders = {
+                "claude": lambda: build_claude_cmd(model=model or None),
+                "codex": lambda: build_codex_cmd(model=model or None),
+            }
+            builder = cmd_builders.get(cfg.llm.provider)
+            if builder:
+                logger.info("  コマンド: %s", " ".join(builder()))
+        if file_direct:
+            logger.info("  ファイル直接モード（CLI claude）")
+        else:
+            logger.info("  モード: %s/%s", mode, cfg.llm.provider)
+        return {
+            "triage": None,
+            "confidence": 0.0,
+            "skipped": False,
+            "error": None,
+            "destination_path": None,
+        }
 
     if file_direct:
         # [3.3-alt] ファイル直接モード: 抽出/トランケート/要約をスキップ
         logger.info("  ファイル直接モード（CLI claude）")
-        if dry_run:
-            cmd = build_claude_cmd(model=model or None)
-            logger.info("  コマンド: %s", " ".join(cmd))
         cls_result = classify_document(
             text="",
             filename=file_path.name,
@@ -168,15 +186,6 @@ def process_file(
                 logger.info("  要約完了")
             classify_text = summary_result.summary
 
-        if dry_run and mode == "cli":
-            cmd_builders = {
-                "claude": lambda: build_claude_cmd(model=model or None),
-                "codex": lambda: build_codex_cmd(model=model or None),
-            }
-            builder = cmd_builders.get(cfg.llm.provider)
-            if builder:
-                logger.info("  コマンド: %s", " ".join(builder()))
-
         cls_result = classify_document(
             text=classify_text,
             filename=file_path.name,
@@ -202,19 +211,18 @@ def process_file(
         cls_result.reason,
     )
 
-    # [3.6] ファイル移動（dry-runでなければ）
+    # [3.6] ファイル移動
     destination_path: str | None = None
-    if not dry_run:
-        try:
-            dest = move_file(
-                file_path,
-                source_dir=source_dir,
-                output_dir=output_dir,
-                triage=cls_result.triage,
-            )
-            destination_path = str(dest)
-        except OSError as e:
-            logger.error("  ファイル移動失敗: %s", e)
+    try:
+        dest = move_file(
+            file_path,
+            source_dir=source_dir,
+            output_dir=output_dir,
+            triage=cls_result.triage,
+        )
+        destination_path = str(dest)
+    except OSError as e:
+        logger.error("  ファイル移動失敗: %s", e)
 
     # [3.7] DB記録
     _record_result(

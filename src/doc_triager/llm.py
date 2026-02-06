@@ -54,14 +54,14 @@ def call_api(
 def _run_cli(
     *,
     cmd: list[str],
-    prompt: str,
+    prompt: str | None = None,
     timeout: int,
 ) -> str:
     """Execute a CLI command and return stdout.
 
     Args:
         cmd: Command and arguments.
-        prompt: Text to pass via stdin.
+        prompt: Text to pass via stdin. None if prompt is in cmd args.
         timeout: Subprocess timeout in seconds.
 
     Returns:
@@ -72,6 +72,9 @@ def _run_cli(
         subprocess.TimeoutExpired: If CLI execution times out.
         RuntimeError: If CLI exits with non-zero code.
     """
+    if prompt is not None:
+        logger.debug("CLIプロンプト: %s", prompt)
+
     result = subprocess.run(
         args=cmd,
         input=prompt,
@@ -114,8 +117,10 @@ def call_claude(
 ) -> str:
     """Call LLM via claude CLI.
 
+    プロンプトは -p の引数として渡す（@ 参照が解釈されるため）。
+
     Args:
-        prompt: The prompt text to send via stdin.
+        prompt: The prompt text.
         model: Optional model name for --model option.
         timeout: Subprocess timeout in seconds.
 
@@ -127,8 +132,12 @@ def call_claude(
         subprocess.TimeoutExpired: If execution times out.
         RuntimeError: If CLI exits with non-zero code.
     """
-    cmd = build_claude_cmd(model=model)
-    return _run_cli(cmd=cmd, prompt=prompt, timeout=timeout)
+    base = build_claude_cmd(model=model)
+    # -p の直後にプロンプトを引数として挿入
+    p_index = base.index("-p")
+    cmd = base[: p_index + 1] + [prompt] + base[p_index + 1 :]
+    logger.debug("CLIプロンプト: %s", prompt)
+    return _run_cli(cmd=cmd, timeout=timeout)
 
 
 def build_codex_cmd(

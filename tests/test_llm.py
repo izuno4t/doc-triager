@@ -1,7 +1,10 @@
 """Tests for llm module."""
 
+import logging
 import subprocess
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from doc_triager.llm import (
     build_claude_cmd,
@@ -113,19 +116,21 @@ class TestCallClaude:
             args=["claude"], returncode=0, stdout="out", stderr=""
         )
 
-        call_claude(prompt="p", model="my-model", timeout=120)
+        call_claude(prompt="my prompt", model="my-model", timeout=120)
 
         call_args = mock_run.call_args
         cmd = call_args.kwargs["args"]
         assert cmd == [
             "claude",
             "-p",
+            "my prompt",
             "--output-format",
             "text",
             "--model",
             "my-model",
         ]
-        assert call_args.kwargs["input"] == "p"
+        # プロンプトはコマンド引数に含まれるため stdin は不要
+        assert call_args.kwargs.get("input") is None
         assert call_args.kwargs["timeout"] == 120
 
     @patch("doc_triager.llm.subprocess.run")
@@ -134,10 +139,10 @@ class TestCallClaude:
             args=["claude"], returncode=0, stdout="out", stderr=""
         )
 
-        call_claude(prompt="p", model=None, timeout=120)
+        call_claude(prompt="my prompt", model=None, timeout=120)
 
         cmd = mock_run.call_args.kwargs["args"]
-        assert cmd == ["claude", "-p", "--output-format", "text"]
+        assert cmd == ["claude", "-p", "my prompt", "--output-format", "text"]
 
     @patch("doc_triager.llm.subprocess.run")
     def test_command_not_found_raises(self, mock_run: MagicMock) -> None:
@@ -281,21 +286,26 @@ class TestBuildClaudeCmd:
         assert "-f" not in cmd
 
     @patch("doc_triager.llm.subprocess.run")
-    def test_call_claude_uses_build_cmd(self, mock_run: MagicMock) -> None:
-        """call_claude が build_claude_cmd を使用している。"""
+    def test_call_claude_includes_prompt_in_cmd(self, mock_run: MagicMock) -> None:
+        """call_claude が -p の引数にプロンプトを含める。"""
         mock_run.return_value = subprocess.CompletedProcess(
             args=["claude"], returncode=0, stdout="output", stderr=""
         )
 
         call_claude(
-            prompt="test",
+            prompt="analyze @/tmp/test.pdf",
             model="my-model",
             timeout=120,
         )
 
         cmd = mock_run.call_args.kwargs["args"]
-        expected = build_claude_cmd(model="my-model")
-        assert cmd == expected
+        base = build_claude_cmd(model="my-model")
+        # base: ["claude", "-p", "--output-format", "text", "--model", "my-model"]
+        # 実際: ["claude", "-p", prompt, "--output-format", "text", "--model", "my-model"]
+        assert cmd[0] == "claude"
+        assert cmd[1] == "-p"
+        assert cmd[2] == "analyze @/tmp/test.pdf"
+        assert cmd[3:] == base[2:]  # --output-format text --model my-model
 
 
 class TestBuildCodexCmd:
@@ -323,3 +333,35 @@ class TestBuildCodexCmd:
         cmd = mock_run.call_args.kwargs["args"]
         expected = build_codex_cmd(model="o3")
         assert cmd == expected
+
+
+class TestCliPromptLogging:
+    """Tests for CLI prompt logging."""
+
+    @patch("doc_triager.llm.subprocess.run")
+    def test_cli_logs_prompt_on_call(
+        self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """CLI実行時にプロンプトがログ出力される。"""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["claude"], returncode=0, stdout="output", stderr=""
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="doc_triager.llm"):
+            call_claude(prompt="test prompt content", model=None, timeout=120)
+
+        assert any("test prompt content" in record.message for record in caplog.records)
+
+    @patch("doc_triager.llm.subprocess.run")
+    def test_codex_logs_prompt_on_call(
+        self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """codex CLI実行時にもプロンプトがログ出力される。"""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["codex"], returncode=0, stdout="output", stderr=""
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="doc_triager.llm"):
+            call_codex(prompt="codex prompt text", model=None, timeout=120)
+
+        assert any("codex prompt text" in record.message for record in caplog.records)

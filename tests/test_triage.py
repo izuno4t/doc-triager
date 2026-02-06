@@ -292,9 +292,12 @@ class TestClassifyViaCliMode:
 
         call_args = mock_run.call_args
         cmd = call_args.kwargs["args"]
-        assert cmd == [
-            "claude",
-            "-p",
+        # claude はプロンプトを -p の引数として渡す
+        assert cmd[0] == "claude"
+        assert cmd[1] == "-p"
+        # cmd[2] はプロンプトテキスト
+        assert isinstance(cmd[2], str)
+        assert cmd[3:] == [
             "--output-format",
             "text",
             "--model",
@@ -410,7 +413,11 @@ class TestClassifyViaCliMode:
         )
 
         cmd = mock_run.call_args.kwargs["args"]
-        assert cmd == ["claude", "-p", "--output-format", "text"]
+        # claude はプロンプトを -p の引数として渡す
+        assert cmd[0] == "claude"
+        assert cmd[1] == "-p"
+        assert isinstance(cmd[2], str)
+        assert cmd[3:] == ["--output-format", "text"]
 
     def test_unsupported_cli_provider_returns_error(self) -> None:
         result = classify_document(
@@ -694,9 +701,8 @@ class TestClassifyDocumentFilePath:
 
         call_kwargs = mock_cli.call_args.kwargs
         prompt = call_kwargs["prompt"]
-        # classify_file.txt 固有の文言が含まれる（Read ツール指示）
-        assert "Read" in prompt
-        assert "/tmp/slides.pdf" in prompt
+        # classify_file.txt 固有の文言が含まれる（@ 参照）
+        assert "@/tmp/slides.pdf" in prompt
         # classify.txt 固有の文言（extracted_text プレースホルダの展開結果）が含まれない
         assert "{extracted_text}" not in prompt
 
@@ -755,9 +761,8 @@ class TestBuildClassifyPrompt:
             file_path=Path("/tmp/slides.pdf"),
         )
 
-        # classify_file.txt の特徴的な文言（Read ツール指示）
-        assert "Read" in prompt
-        assert "/tmp/slides.pdf" in prompt
+        # classify_file.txt の特徴的な文言（@ 参照）
+        assert "@/tmp/slides.pdf" in prompt
         assert "slides.pdf" in prompt
         assert ".pdf" in prompt
         # テキストモード固有のプレースホルダが展開されていないこと
